@@ -6,13 +6,14 @@ except:
     print("""You need python 2.7+ or installed argparse module.\n\t
             pip install argparse""")
 
+import json
 import logging
+import os
+import sys
 import urllib
 import urllib2
 import yaml
-import json
-import os
-import sys
+
 from multiprocessing.pool import ThreadPool as Pool
 
 logging.basicConfig(level = logging.INFO, format='%(asctime)s : %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
