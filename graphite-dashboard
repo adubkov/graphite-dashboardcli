@@ -1,0 +1,394 @@
+#!/usr/bin/env python
+
+try:
+    import argparse
+except:
+    print("""You need python 2.7+ or installed argparse module.\n\t
+            pip install argparse""")
+
+import logging
+import urllib
+import urllib2
+import yaml
+import json
+import os
+import sys
+from multiprocessing.pool import ThreadPool as Pool
+
+logging.basicConfig(level = logging.INFO, format='%(asctime)s : %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+logger = logging.getLogger(__name__)
+
+# Limit system traceback
+sys.tracebacklimit=0
+
+def debugEnable():
+    """
+    Enable debug mode.
+    """
+
+    urllib2.install_opener(urllib2.build_opener(urllib2.HTTPHandler(debuglevel=1)))
+    logger.setLevel(logging.DEBUG)
+    logger.debug("Debug mode enabled".upper())
+
+class GraphiteDashboardBase(object):
+    """
+    Base class for GraphiteDashboard.
+    """
+
+    def __init__(self, endpoint):
+        self.endpoint = self.endpoint(endpoint)
+
+    def endpoint(self, endpoint):
+        """
+        Abstract method. Return well formated endpoint.
+        """
+
+        raise NotImplementedError("Subclass must implement abstract method")
+
+class localGraphiteDashboard(GraphiteDashboardBase):
+    """
+    Class for manage Graphite Dashboards on local file system.
+    """
+
+    def endpoint(self, endpoint):
+        """
+        Return formatted endpoint to work with graphite dashboards.
+
+        Arguments:
+        endpoint    (str)   Path to graphite dashboards.
+        """
+
+        if os.path.isdir(endpoint):
+            result  = os.path.normpath(endpoint)
+        else:
+            result = endpoint
+        return result
+
+    def list(self):
+        """
+        Return list of graphite dashboards.
+        """
+
+        self.dashboards = [ f for f in os.listdir(self.endpoint) if os.path.isfile(os.path.join(self.endpoint, f)) ]
+        return self.dashboards
+
+    def load(self, name):
+        """
+        Return entire of graphite dashboard as dict.
+        """
+
+        result = None
+        path = os.path.join(self.endpoint, name)
+        try:
+            with open(path, 'rb') as f:
+                result = json.load(f)
+        except Exception as e:
+            logger.error("{0}: {1}".format(e.message, path))
+        finally:
+            return result
+
+    def save(self, dashboard):
+        """
+        Save graphite dashboard.
+
+        Arguments:
+        dashboard   (dict)  Graphite dashboard.
+        """
+
+        result = None
+        name = dashboard['name']
+        path = os.path.join(self.endpoint, name)
+        data = json.dumps(dashboard, indent=4)
+        try:
+            with open(path, 'wb') as f:
+                f.write(data)
+            result = True
+        except Exception as e:
+            logger.error("{0}: {1}".format(e.message, path))
+        finally:
+            return result
+
+    def delete(self, dashboard):
+        """
+        Delete graphite dashboard.
+
+        Arguments:
+        dashboard   (str)   Name of graphite dashboard.
+        """
+
+        result = None
+        path = os.path.join(self.endpoint, dashboard)
+        try:
+            os.remove(path)
+            result = True
+        except Exception as e:
+            logger.warning("{0}:".format(e.message, path))
+        finally:
+            return result
+
+class remoteGraphiteDashboard(GraphiteDashboardBase):
+    """
+    Class for manage Graphite Dashboards with API.
+    """
+
+    def endpoint(self, endpoint):
+        """
+        Return formatted endpoint to work with graphite dashboards.
+
+        Arguments:
+        endpoint    (str)   Path to graphite dashboards.
+        """
+
+        def getUrl(source):
+            parts = source.split('//', 1)
+            if len(parts) > 1:
+                result = "{0}//{1}/dashboard/".format(parts[0], parts[1].split('/', 1)[0])
+            else:
+                result = "http://{0}/dashboard/".format(parts[0])
+            return result
+
+        result = None
+        if (endpoint) == list:
+            if type(destination) == list:
+                result = []
+                for dst in destination:
+                    result.append(getUrl(dst))
+            else:
+                result = getUrl(endpoint)
+        else:
+            result = getUrl(endpoint)
+        logger.debug('endpoint({0}): {1}'.format(endpoint, result))
+        return result
+
+    def list(self):
+        """
+        Return list of graphite dashboards.
+        """
+
+        endpoint = self.endpoint + 'find/'
+        encoded_args = urllib.urlencode({ 'query': '' })
+        res = urllib2.urlopen(endpoint, encoded_args).read()
+        data = json.loads(res)
+        self.dashboards = map(lambda x: x.get('name'), data['dashboards'])
+        logger.debug('listDashboards result: ' + str(self.dashboards))
+        return self.dashboards
+
+    def load(self, dashboard):
+        """
+        Return entire of graphite dashboard as dict.
+        """
+
+        result = None
+        endpoint = self.endpoint + 'load/' + urllib.quote(dashboard)
+        try:
+            data = urllib2.urlopen(endpoint).read()
+            res = json.loads(data)
+        except Exception as e:
+            logger.error("{0}: {1}".format(e.message, endpoint))
+        try:
+            result = res['state']
+        except:
+            raise Exception("Bad graphite dashboard syntax")
+        finally:
+            return result
+
+    def save(self, dashboard):
+        """
+        Save graphite dashboard.
+
+        Arguments:
+        dashboard   (dict)  Graphite dashboard.
+        """
+
+        result = None
+        name = dashboard['name']
+        endpoint = self.endpoint + 'save/'+ urllib.quote(name)
+        encoded_args = 'state=' +urllib.quote_plus(json.dumps(dashboard))
+        headers = {"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"}
+        request = urllib2.Request(endpoint, encoded_args, headers)
+        try:
+            result = json.loads(urllib2.urlopen(request).read())['success']
+        except Exception as e:
+            logger.warning("{0}:{1}".format(e.message, endpoint))
+        finally:
+            return result
+
+    def delete(self, dashboard):
+        """
+        Delete graphite dashboard.
+
+        Arguments:
+        dashboard   (str)   Name of graphite dashboard.
+        """
+
+        result = None
+        endpoint = self.endpoint + 'delete/'+ urllib.quote(dashboard)
+        try:
+            result = json.loads(urllib2.urlopen(endpoint).read())['success']
+        except Exception as e:
+            logger.warning("{0}:{1}".format(e.message, endpoint))
+        finally:
+            return result
+
+def main():
+
+    # Number threads for use with
+    pool = Pool(processes=10)
+
+    def CreateGraphiteDashboardClass(source):
+        """
+        Create GraphiteDashboard Class based source.
+
+        Return:
+            GraphiteDashboard class
+        """
+
+        result = None
+        if source[:4].lower() == 'http':
+            BaseClass = remoteGraphiteDashboard
+        else:
+            BaseClass = localGraphiteDashboard
+
+        result = type("GraphiteDashboard", (BaseClass, ), {})(source)
+        return result
+
+    def showDashboard():
+        """
+        Print dashboard.
+        """
+
+        source = args['source'][0]
+        gd = CreateGraphiteDashboardClass(source)
+        name = args['name'][0]
+        result = json.dumps(gd.load(name), indent=4)
+        print(result)
+
+    def deleteDashboard():
+        """
+        Delete dashboard.
+        """
+
+        def delete_dashboard(argv):
+            """
+            Delete dashboard (for parallel executeion).
+            """
+
+            name, source = argv
+            gd = CreateGraphiteDashboardClass(source)
+            result = json.dumps(gd.delete(name), indent=4)
+            print(result)
+
+        name = args['name'][0]
+        sources = args['source']
+
+        # Prepare arguments list for paralel execution
+        argv = [ (name, source) for source in sources ]
+
+        pool.map(delete_dashboard, argv)
+        pool.close()
+        pool.join()
+
+    def copyDashboard():
+        """
+        Copy dashboard from source to destination.
+        """
+
+        def copy_dashboard(argv):
+            name, source, destination = argv
+            dashboard = gd_source.load(name)
+            if dashboard:
+                result = gd_destination.save(dashboard)
+            else:
+                result = False
+            print("Copy {0}\tfrom {1} to {2}:\t{3}".format(name, source, destination, result))
+
+        result = None
+        source = args['source'][0]
+        destination = args['source'][1]
+        gd_source = CreateGraphiteDashboardClass(source)
+        gd_destination = CreateGraphiteDashboardClass(destination)
+
+        name = args['name'][0]
+        if name == '*':
+            dashboards = gd_source.list()
+
+            # Prepare arguments list for paralel execution
+            argv = []
+            for dashboard_name in dashboards:
+                argv.append((dashboard_name, source, destination))
+
+            pool.map(copy_dashboard, argv)
+        else:
+            # Prepare arguments list for paralel execution
+            argv = [(name, source, destination)]
+            pool.map(copy_dashboard, argv)
+
+        pool.close()
+        pool.join()
+
+    def syncDashboard():
+        """
+        Synchronize dashboards between multiple sources.
+        """
+
+        def sync_dashboard(argv):
+            name, source = argv
+            dashboard = CreateGraphiteDashboardClass(source).load(name)
+            filtered_sources = list(sources)
+            filtered_sources.pop(filtered_sources.index(source))
+            status = ''
+            for source in filtered_sources:
+                result = CreateGraphiteDashboardClass(source).save(dashboard)
+                status += "\t to {0}\t{1}\n".format(source, result)
+            print("Sync {0} from {1}:\n{2}".format(name, source, status))
+
+        sources = args['source']
+        dashboards = {}
+
+        for source in sources:
+            dashboard_list = CreateGraphiteDashboardClass(source).list()
+            for dashboard in dashboard_list:
+                if not dashboards.has_key(dashboard):
+                    dashboards.update({dashboard: source})
+
+        # Prepare arguments list for paralel execution
+        dashboards = [ (k,v) for k,v in dashboards.iteritems() ]
+
+        pool.map(sync_dashboard, dashboards)
+        pool.close()
+        pool.join()
+
+    argp = argparse.ArgumentParser(description="Graphite Dashboard manage CLI tool.",
+            prog="graphite-dashboard")
+
+    argp.add_argument('cmd', metavar='COMMAND', nargs=1,
+            help="Command: show, delete copy, sync")
+    argp.add_argument('name', metavar='DASHBOARD', nargs=1,
+            help="Name of dashboard to operate with, or '*' for all.")
+    argp.add_argument('source', metavar='ENDPOINT', nargs='+', default='./',
+            help="List of endpoints, space delimited")
+    argp.add_argument('-v', '--version', action='version', version='%(prog)s 0.1')
+    argp.add_argument('--debug', dest='debug', action='store_const',
+            const=debugEnable, help='Enable debug mode.')
+    args = vars(argp.parse_args())
+
+    # Enable debug mode if --debug in arguments
+    if args['debug']:
+        args['debug']()
+
+    logger.debug(args)
+
+    # Map command to function
+    action = {
+                'show': showDashboard,
+                'copy': copyDashboard,
+                'delete': deleteDashboard,
+                'sync': syncDashboard,
+             }
+
+    # Execute command
+    for cmd in args['cmd']:
+        action.get(cmd, argp.print_usage)()
+
+if __name__ == '__main__':
+    main()
