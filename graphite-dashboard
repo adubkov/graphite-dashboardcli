@@ -82,7 +82,7 @@ class localGraphiteDashboard(GraphiteDashboardBase):
         path = os.path.join(self.endpoint, name)
         try:
             with open(path, 'rb') as f:
-                result = json.load(f)
+                result = yaml.safe_load(f)
         except Exception as e:
             logger.error("{0}: {1}".format(e.message, path))
         finally:
@@ -99,7 +99,11 @@ class localGraphiteDashboard(GraphiteDashboardBase):
         result = None
         name = dashboard['name']
         path = os.path.join(self.endpoint, name)
-        data = json.dumps(dashboard, indent=4)
+        data = yaml.safe_dump(dashboard,
+                              default_flow_style = False,
+                              allow_unicode = True,
+                              encoding = None,
+                              indent = 4 ).replace('\n-', '\n-\n ')
         try:
             with open(path, 'wb') as f:
                 f.write(data)
@@ -261,7 +265,12 @@ def main():
         source = args['source'][0]
         gd = CreateGraphiteDashboardClass(source)
         name = args['name'][0]
-        result = json.dumps(gd.load(name), indent=4)
+        result = yaml.safe_dump(gd.load(name),
+                                default_flow_style = False,
+                                allow_unicode = True,
+                                encoding = None,
+                                indent = 4 ).replace('\n-', '\n-\n ')
+
         print(result)
 
     def deleteDashboard():
@@ -368,7 +377,7 @@ def main():
             help="Name of dashboard to operate with, or '*' for all.")
     argp.add_argument('source', metavar='ENDPOINT', nargs='+', default='./',
             help="List of endpoints, space delimited")
-    argp.add_argument('-v', '--version', action='version', version='%(prog)s 0.1')
+    argp.add_argument('-v', '--version', action='version', version='%(prog)s 0.1.1')
     argp.add_argument('--debug', dest='debug', action='store_const',
             const=debugEnable, help='Enable debug mode.')
     args = vars(argp.parse_args())

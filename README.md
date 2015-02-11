@@ -2,10 +2,11 @@
 This tool allow manage graphite dashboards from command line.
 
 Cerrently it supports:
-* Show dashboard configuration from local storage or remote Graphite
+* Show dashboard configuration in YAML format from local storage or remote Graphite
 * Import\Export dashboards from\to Graphite
 * Synchronize dashboards between multiple Graphite servers
 * Delete dashboards from local storage or remote Graphite
+* Keep dashboards in YAML format
 
 ## Install
 You can install Graphite-Dashboard CLI tool with pip:
