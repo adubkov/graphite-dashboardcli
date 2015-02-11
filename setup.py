@@ -2,7 +2,7 @@
 from setuptools import setup, find_packages
 
 setup(name='graphite-dashboard',
-      version = '0.1',
+      version = '0.1.1',
       description = 'CLI for export\import graphite dashboards',
       author = 'Alexey Dubkov',
       author_email = 'alexey.dubkov@gmail.com',
