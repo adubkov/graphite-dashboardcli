@@ -11,13 +11,13 @@ Cerrently it supports:
 ## Install
 You can install Graphite-Dashboard CLI tool with pip:
 ```bash
-pip install graphite-dashboard
+pip install graphite-dashboardcli
 ``` 
 
 ## Usage
 
 ```bash
-$ graphite-dashboard COMMAND DASHBOARD_NAME ENDPOINT [DESTINATIONS...]
+$ graphite-dashboardcli COMMAND DASHBOARD_NAME ENDPOINT [DESTINATIONS...]
 
 COMMAND:
     show  - Show content of dashboard
@@ -31,30 +31,30 @@ COMMAND:
 Show content of specific dashboad:
 ```bash
 # Show from local storage
-$ graphite-dashboard show TestDashboard ./dashboards
+$ graphite-dashboardcli show TestDashboard ./dashboards
 
 # Show from remote Graphite
-$ graphite-dashboard show TestDashboard http://graphite.local
+$ graphite-dashboardcli show TestDashboard http://graphite.local
 ```
 
 Copy dashboard from\to:
 ```bash
 # Copy from local storage to remote Graphite server
-$ graphite-dashboard copy TestDashboard ./dashboards http://graphite.local
+$ graphite-dashboardcli copy TestDashboard ./dashboards http://graphite.local
 
 # Copy all dashboards from remote Graphite to local
-$ graphite-dashboard copy '*' http://graphite.local ./dashboards
+$ graphite-dashboardcli copy '*' http://graphite.local ./dashboards
 
 # Copy from one Graphite server to another
-$ graphite-dashboard copy TestDashboard http://graphite1.local http://graphite2.local
+$ graphite-dashboardcli copy TestDashboard http://graphite1.local http://graphite2.local
 ```
 
 Sync dashboards between graphite servers:
 ```bash
-$ graphite-dashboard sync '*' http://graphite1.local http://graphite2.local http://graphite3.local
+$ graphite-dashboardcli sync '*' http://graphite1.local http://graphite2.local http://graphite3.local
 ```
 
 Delete dashboard:
 ```bash
-$ graphite-dashboard delete 'TestDashboard' http://graphite1.local http://graphite2.local
+$ graphite-dashboardcli delete 'TestDashboard' http://graphite1.local http://graphite2.local
 ```
