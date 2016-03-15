@@ -3,6 +3,7 @@ This tool allow manage graphite dashboards from command line.
 
 Cerrently it supports:
 * Show dashboard configuration in YAML format from local storage or remote Graphite
+* List dashboards
 * Import\Export dashboards from\to Graphite
 * Synchronize dashboards between multiple Graphite servers
 * Delete dashboards from local storage or remote Graphite
@@ -28,13 +29,18 @@ COMMAND:
 
 ## Examples
 
-Show content of specific dashboad:
+Show content of specific dashboard:
 ```bash
 # Show from local storage
 $ graphite-dashboardcli show TestDashboard ./dashboards
 
 # Show from remote Graphite
 $ graphite-dashboardcli show TestDashboard http://graphite.local
+```
+List dashboards on remote server:
+```bash
+$ graphite-dashboardcli list '*' http://graphite.local
+$ graphite-dashboardcli list TestDashboard http://graphite.local
 ```
 
 Copy dashboard from\to:
