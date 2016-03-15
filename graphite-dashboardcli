@@ -36,8 +36,9 @@ class GraphiteDashboardBase(object):
     Base class for GraphiteDashboard.
     """
 
-    def __init__(self, endpoint):
+    def __init__(self, endpoint, dry_run):
         self.endpoint = self.endpoint(endpoint)
+        self.dry_run = dry_run
 
     def endpoint(self, endpoint):
         """
@@ -104,14 +105,18 @@ class localGraphiteDashboard(GraphiteDashboardBase):
                               allow_unicode = True,
                               encoding = None,
                               indent = 4 ).replace('\n-', '\n-\n ')
-        try:
-            with open(path, 'wb') as f:
-                f.write(data)
-            result = True
-        except Exception as e:
-            logger.error("{0}: {1}".format(e.message, path))
-        finally:
-            return result
+        if self.dry_run:
+            logger.info("Would save {0}".format(path))
+            return True
+        else:
+            try:
+                with open(path, 'wb') as f:
+                    f.write(data)
+                result = True
+            except Exception as e:
+                logger.error("{0}: {1}".format(e.message, path))
+            finally:
+                return result
 
     def delete(self, dashboard):
         """
@@ -123,13 +128,17 @@ class localGraphiteDashboard(GraphiteDashboardBase):
 
         result = None
         path = os.path.join(self.endpoint, dashboard)
-        try:
-            os.remove(path)
-            result = True
-        except Exception as e:
-            logger.warning("{0}:".format(e.message, path))
-        finally:
-            return result
+        if self.dry_run:
+            logger.info("Would delete {0}".format(path))
+            return True
+        else:
+            try:
+                os.remove(path)
+                result = True
+            except Exception as e:
+                logger.warning("{0}:".format(e.message, path))
+            finally:
+                return result
 
 class remoteGraphiteDashboard(GraphiteDashboardBase):
     """
@@ -211,12 +220,16 @@ class remoteGraphiteDashboard(GraphiteDashboardBase):
         encoded_args = 'state=' +urllib.quote_plus(json.dumps(dashboard))
         headers = {"Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"}
         request = urllib2.Request(endpoint, encoded_args, headers)
-        try:
-            result = json.loads(urllib2.urlopen(request).read())['success']
-        except Exception as e:
-            logger.warning("{0}:{1}".format(e.message, endpoint))
-        finally:
-            return result
+        if self.dry_run:
+            logger.info("Would save {0}".format(endpoint))
+            return True
+        else:
+            try:
+                result = json.loads(urllib2.urlopen(request).read())['success']
+            except Exception as e:
+                logger.warning("{0}:{1}".format(e.message, endpoint))
+            finally:
+                return result
 
     def delete(self, dashboard):
         """
@@ -228,12 +241,16 @@ class remoteGraphiteDashboard(GraphiteDashboardBase):
 
         result = None
         endpoint = self.endpoint + 'delete/'+ urllib.quote(dashboard)
-        try:
-            result = json.loads(urllib2.urlopen(endpoint).read())['success']
-        except Exception as e:
-            logger.warning("{0}:{1}".format(e.message, endpoint))
-        finally:
-            return result
+        if self.dry_run:
+            logger.info("Would delete {0}".format(endpoint))
+            return True
+        else: 
+            try:
+                result = json.loads(urllib2.urlopen(endpoint).read())['success']
+            except Exception as e:
+                logger.warning("{0}:{1}".format(e.message, endpoint))
+            finally:
+                return result
 
 def main():
 
@@ -254,12 +271,12 @@ def main():
         else:
             BaseClass = localGraphiteDashboard
 
-        result = type("GraphiteDashboard", (BaseClass, ), {})(source)
+        result = type("GraphiteDashboard", (BaseClass, ), {})(source, args['dry_run'])
         return result
 
     def showDashboard():
         """
-        Print dashboard.
+        Print named dashboard.
         """
 
         source = args['source'][0]
@@ -271,7 +288,7 @@ def main():
                                 encoding = None,
                                 indent = 4 ).replace('\n-', '\n-\n ')
 
-        print(result)
+        logger.info(result)
 
     def deleteDashboard():
         """
@@ -286,7 +303,7 @@ def main():
             name, source = argv
             gd = CreateGraphiteDashboardClass(source)
             result = json.dumps(gd.delete(name), indent=4)
-            print(result)
+            logger.info(result)
 
         name = args['name'][0]
         sources = args['source']
@@ -310,7 +327,7 @@ def main():
                 result = gd_destination.save(dashboard)
             else:
                 result = False
-            print("Copy {0}\tfrom {1} to {2}:\t{3}".format(name, source, destination, result))
+            logger.info("Copy {0}\tfrom {1} to {2}:\t{3}".format(name, source, destination, result))
 
         result = None
         source = args['source'][0]
@@ -336,6 +353,18 @@ def main():
         pool.close()
         pool.join()
 
+
+    def listDashboard():
+        """
+        List dashboards matching a given pattern
+        """
+        source = args['source'][0]
+        name = args['name'][0]
+        dashboard_list = CreateGraphiteDashboardClass(source).list()
+        for dashboard in dashboard_list:
+            if(name == "*" or name == dashboard):
+                logger.info("Found dashboard {0}".format(dashboard))
+
     def syncDashboard():
         """
         Synchronize dashboards between multiple sources.
@@ -347,10 +376,10 @@ def main():
             filtered_sources = list(sources)
             filtered_sources.pop(filtered_sources.index(source))
             status = ''
-            for source in filtered_sources:
-                result = CreateGraphiteDashboardClass(source).save(dashboard)
-                status += "\t to {0}\t{1}\n".format(source, result)
-            print("Sync {0} from {1}:\n{2}".format(name, source, status))
+            for dest in filtered_sources:
+                result = CreateGraphiteDashboardClass(dest).save(dashboard)
+                status += "\t to {0}\t{1}\n".format(dest, result)
+            logger.info("Synced {0} from {1}:\n{2}".format(name, source, status))
 
         sources = args['source']
         dashboards = {}
@@ -372,7 +401,7 @@ def main():
             prog="graphite-dashboard")
 
     argp.add_argument('cmd', metavar='COMMAND', nargs=1,
-            help="Command: show, delete copy, sync")
+            help="Command: show, delete, copy, sync")
     argp.add_argument('name', metavar='DASHBOARD', nargs=1,
             help="Name of dashboard to operate with, or '*' for all.")
     argp.add_argument('source', metavar='ENDPOINT', nargs='+', default='./',
@@ -380,6 +409,8 @@ def main():
     argp.add_argument('-v', '--version', action='version', version='%(prog)s 0.1.1')
     argp.add_argument('--debug', dest='debug', action='store_const',
             const=debugEnable, help='Enable debug mode.')
+    argp.add_argument('--dry-run', dest='dry_run', action='store_const',
+            const=True, help='Enable dry run mode')
     args = vars(argp.parse_args())
 
     # Enable debug mode if --debug in arguments
@@ -394,6 +425,7 @@ def main():
                 'copy': copyDashboard,
                 'delete': deleteDashboard,
                 'sync': syncDashboard,
+                'list': listDashboard,
              }
 
     # Execute command
